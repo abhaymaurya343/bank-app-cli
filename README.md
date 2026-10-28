@@ -1,6 +1,6 @@
 # 🏦 Enterprise CLI Banking System (DSA-Powered)
 
-An enterprise-grade, high-performance Command Line Banking backend written in pure Core Java. This project is directly inspired by and builds upon the foundational banking domain from [Faisal Memon's 100-Day Java Backend Masterclass](https://github.com/buildwithfaisal/100-day-java-backend-masterclass/tree/main/java/bank-app), evolving it into an algorithmically optimized, production-patterned architecture powered by real-world **Data Structures and Algorithms (DSA)**.
+An enterprise-grade, high-performance Command Line Banking backend featuring dual execution engines in pure **Core Java** and native **Python**. This project is directly inspired by and builds upon the foundational banking domain from [Faisal Memon's 100-Day Java Backend Masterclass](https://github.com/buildwithfaisal/100-day-java-backend-masterclass/tree/main/java/bank-app), evolving it into an algorithmically optimized, production-patterned architecture powered by real-world **Data Structures and Algorithms (DSA)** and rigorous **Enterprise Validation & Error Handling**.
 
 ---
 
@@ -14,22 +14,27 @@ An enterprise-grade, high-performance Command Line Banking backend written in pu
    - [4. Binary Max-Heap — VIP Customer Service Desk](#4-binary-max-heap--vip-customer-service-desk)
    - [5. Directed Graph (BFS & DFS) — Anti-Money Laundering (AML) Analysis](#5-directed-graph-bfs--dfs--anti-money-laundering-aml-analysis)
    - [6. LIFO Stack (Command Pattern) — Transaction Undo & Rollback](#6-lifo-stack-command-pattern--transaction-undo--rollback)
-4. [Complexity Summary Table](#-complexity-summary-table)
-5. [Comparison with Reference Bank App](#-comparison-with-reference-bank-app)
-6. [Project Structure](#-project-structure)
-7. [Getting Started & Running the Project](#-getting-started--running-the-project)
-   - [Option A: Direct Java Compilation (Zero External Tools)](#option-a-direct-java-compilation-zero-external-tools)
-   - [Option B: Using Maven](#option-b-using-maven)
-   - [Option C: One-Click Run Scripts](#option-c-one-click-run-scripts)
-8. [Running the Automated Test Suite](#-running-the-automated-test-suite)
-9. [CLI Feature Walkthrough & Menu Guide](#-cli-feature-walkthrough--menu-guide)
-10. [Key Design Patterns Utilized](#-key-design-patterns-utilized)
+4. [Enterprise Validation & Granular Error Handling](#-enterprise-validation--granular-error-handling)
+   - [Granular Email Validation & Feedback](#granular-email-validation--feedback)
+   - [Phone, Name, and Account Format Verification](#phone-name-and-account-format-verification)
+   - [Interactive In-CLI Recovery Loops](#interactive-in-cli-recovery-loops)
+5. [Complexity Summary Table](#-complexity-summary-table)
+6. [Comparison with Reference Bank App](#-comparison-with-reference-bank-app)
+7. [Project Structure](#-project-structure)
+8. [Getting Started & Running the Project](#-getting-started--running-the-project)
+   - [Method 1: Instant Python CLI Engine (Zero-Setup)](#method-1-instant-python-cli-engine-zero-setup)
+   - [Method 2: One-Click Desktop Batch Launcher](#method-2-one-click-desktop-batch-launcher)
+   - [Method 3: Native Java Compilation (`javac` / `java`)](#method-3-native-java-compilation-javac--java)
+   - [Method 4: Using Apache Maven](#method-4-using-apache-maven)
+9. [Running the Automated Test Suite](#-running-the-automated-test-suite)
+10. [CLI Feature Walkthrough & Menu Guide](#-cli-feature-walkthrough--menu-guide)
+11. [Key Design Patterns Utilized](#-key-design-patterns-utilized)
 
 ---
 
 ## 🌟 Project Overview & Motivation
 
-In traditional beginner bank apps, data management is typically limited to in-memory `ArrayList`s or basic `HashMap`s with linear scans (`O(N)`). While suitable for tutorials, real-world financial core banking systems process millions of accounts and require:
+In traditional beginner bank apps, data management is typically limited to in-memory `ArrayList`s or basic `HashMap`s with linear scans (`O(N)`). While suitable for introductory tutorials, real-world financial core banking systems process millions of accounts and require:
 
 - Sub-millisecond autocomplete for customer search without freezing the console.
 - In-memory L1 caching to serve high-frequency ("hot") accounts without hitting disks.
@@ -37,8 +42,9 @@ In traditional beginner bank apps, data management is typically limited to in-me
 - Strict priority queue scheduling for high-net-worth (VIP) clients.
 - Forensic graph analysis to detect circular money laundering rings and fund trails.
 - Atomic reversible audit trails allowing tellers to undo mistaken inputs.
+- Resilient input validation preventing corrupted or malformed records from reaching the ledger.
 
-This project implements all these capabilities natively in standard Java with **zero external dependencies**.
+This project implements all these capabilities natively with **zero third-party runtime dependencies**.
 
 ---
 
@@ -48,13 +54,16 @@ The application follows the **Layered Clean Architecture** pattern:
 
 ```mermaid
 flowchart TD
-    CLI["CLI Layer\n(ConsoleBankApp, TablePrinter, AnsiColor)"]
-    Service["Service Layer\n(BankService, BankServiceImpl)"]
+    CLI["CLI Presentation Layer\n(ConsoleBankApp, TablePrinter, AnsiColor)"]
+    Service["Service Orchestration Layer\n(BankService, BankServiceImpl)"]
+    Validation["Validation & Security Layer\n(Validation.java, RFC 5322 & E.164 Engine)"]
     Repo["Repository Layer\n(AccountRepository, CustomerRepository, TransactionRepository)"]
     DSA["Custom DSA Layer\n(Trie, LRUCache, BST, MaxHeap, MoneyFlowGraph, AuditStack)"]
     Domain["Domain Model Layer\n(Account, Customer, Transaction, ServiceRequest)"]
 
+    CLI --> Validation
     CLI --> Service
+    Service --> Validation
     Service --> Repo
     Service --> DSA
     Repo --> DSA
@@ -63,13 +72,13 @@ flowchart TD
 ```
 
 ### Layer Responsibilities
-* **`com.bank.cli`**: Formats interactive CLI menus, ASCII banners, colored status outputs, and auto-sizing tabular statements.
+* **`com.bank.cli`**: Formats interactive CLI menus, ASCII banners, colored status outputs, auto-sizing tabular statements, and validating input prompt loops.
 * **`com.bank.service`**: Encapsulates business logic, balance validation, state transitions, and coordination between repositories and DSA modules.
 * **`com.bank.repository`**: Provides data access abstractions combining primary hash storage with secondary DSA indexes.
 * **`com.bank.dsa`**: Clean, self-contained, custom-built data structures designed specifically for banking problem domains.
 * **`com.bank.domain`**: Rich domain entities (`Account`, `Customer`, `Transaction`, `ServiceRequest`, and domain enums).
-* **`com.bank.util`**: Validation helpers, ANSI color formatters, and table alignment renderers.
-* **`com.bank.exception`**: Domain-specific unchecked exceptions (`InsufficientFundsException`, `AccountNotFoundException`, etc.).
+* **`com.bank.util`**: Enterprise validation helpers, ANSI color formatters, and table alignment renderers.
+* **`com.bank.exception`**: Domain-specific unchecked exceptions (`ValidationException`, `InsufficientFundsException`, `AccountNotFoundException`, etc.).
 
 ---
 
@@ -180,6 +189,37 @@ flowchart TD
 
 ---
 
+## 🛡️ Enterprise Validation & Granular Error Handling
+
+Both the Java and Python implementations feature an industrial-grade input validation framework (`Validation.java` and `run.py`).
+
+### Granular Email Validation & Feedback
+Rather than generic rejection, the validation engine pinpoints the exact structural flaw:
+
+| Malformed Email Input | Pinpointed Error Message |
+| :--- | :--- |
+| `""` or `"   "` | `✖ Email address cannot be empty or blank.` |
+| `"user name@domain.com"` | `✖ Invalid email: email address cannot contain spaces.` |
+| `"userdomain.com"` | `✖ Invalid email format: missing '@' symbol (e.g. user@domain.com).` |
+| `"user@@domain.com"` | `✖ Invalid email format: contains multiple '@' symbols.` |
+| `"@domain.com"` | `✖ Invalid email format: missing username/local part before '@'.` |
+| `"user@"` | `✖ Invalid email format: missing domain name after '@' (e.g. domain.com).` |
+| `"user@domain"` | `✖ Invalid email domain: missing dot extension (e.g. .com, .org).` |
+| `"user@domain.c"` | `✖ Invalid email domain: TLD extension '.c' is too short (minimum 2 characters).` |
+| `"user@example.com"` | `✔ Validated & accepted via RFC 5322 compliance.` |
+
+### Phone, Name, and Account Format Verification
+* **Customer Name**: Enforces lengths between 2 and 100 characters. Rejects digits and punctuation (allowing only letters, hyphens, and apostrophes).
+* **Phone Numbers**: Complies with **ITU-T E.164** standards: requires 7 to 15 digits; allows international prefix `+` and standard separators (`-`, ` `).
+* **Account Numbers**: Strictly validates the format `AC-XXXXXX` (e.g. `AC-100001`). Rejects malformed strings before repository execution.
+* **Monetary Values**: Prevents non-numeric input, `NaN`, `Infinity`, negative amounts, zero amounts for deposits/withdrawals, and enforces a \$100,000,000.00 single-transaction ceiling.
+* **Interval Constraints**: Enforces `minimum_balance <= maximum_balance` for BST range queries.
+
+### Interactive In-CLI Recovery Loops
+In the interactive console, if a user makes a typo in their email address or deposit amount, the CLI **does not crash or discard the form**. Instead, it presents the specific validation message in red and immediately prompts for that field again, creating a smooth user experience.
+
+---
+
 ## 📊 Complexity Summary Table
 
 | Operation / Feature | Underlying DSA | Time Complexity | Space Complexity | Real-World Benefit |
@@ -196,9 +236,12 @@ flowchart TD
 
 ## ⚖ Comparison with Reference Bank App
 
-| Feature | Reference Repo (`buildwithfaisal/bank-app`) | This CLI DSA Project |
+| Feature | Reference Repo (`buildwithfaisal/bank-app`) | This Enterprise CLI DSA Project |
 | :--- | :--- | :--- |
-| **User Interface** | Basic scanner loop | Color-coded interactive CLI with ASCII tables & diagnostics |
+| **User Interface** | Basic scanner loop | Rich interactive CLI with ANSI colors & formatted ASCII tables |
+| **Input Validation** | Basic check on deposit > 0 | Granular RFC 5322 email, E.164 phone, name, and bounds checking |
+| **Error Recovery** | Uncaught exceptions abort flow | Interactive prompt loops re-request invalid fields seamlessly |
+| **Execution Engines** | Java only | Dual-engine: Native Core Java + Zero-Setup Python CLI |
 | **Customer Search** | Linear Stream filter ($O(N)$) | Custom Trie with tokenized prefix search ($O(P + K)$) |
 | **Account Storage** | Raw `HashMap` without caching | Tiered L1 LRU Cache ($O(1)$) + Primary Hash Index |
 | **Balance Inquiries** | Linear scan | Binary Search Tree with branch-pruning range queries |
@@ -206,7 +249,7 @@ flowchart TD
 | **AML & Fraud Detection**| None | Directed Money Flow Graph with BFS trail & DFS cycle detection |
 | **Operational Rollback**| None | Command Pattern undo stack with `REVERSAL` audit trail |
 | **Demo Dataset** | None (manual input required) | 1-Click synthetic seeder with accounts, transfers, and cycles |
-| **Automated Tests** | None | Standalone test runner verifying all DSA structures |
+| **Automated Tests** | None | Comprehensive test suite covering DSA & validation edge cases |
 
 ---
 
@@ -214,10 +257,11 @@ flowchart TD
 
 ```
 bank-app-cli/
-├── pom.xml                                   # Maven build file (Java 17+)
-├── run.bat                                   # Windows one-click compile & launch script
+├── pom.xml                                   # Maven build configuration (Java 17+)
+├── run.bat                                   # Windows launcher (auto-detects Java or Python)
+├── run.py                                    # Instant zero-dependency native Python CLI engine
 ├── run.sh                                    # Unix/macOS one-click compile & launch script
-├── README.md                                 # In-depth project documentation
+├── README.md                                 # Comprehensive in-depth documentation
 └── src/
     ├── main/java/com/bank/
     │   ├── cli/
@@ -254,86 +298,74 @@ bank-app-cli/
     │   └── util/
     │       ├── AnsiColor.java                # Terminal color styling & escape sequences
     │       ├── TablePrinter.java             # ASCII auto-sizing table renderer
-    │       └── Validation.java               # Email, name, and numerical input validators
+    │       └── Validation.java               # Granular email, phone, name, and bounds engine
     └── test/java/com/bank/
-        └── AppTestSuite.java                 # Comprehensive zero-dependency test runner
+        └── AppTestSuite.java                 # Zero-dependency test runner with 25+ assertions
 ```
 
 ---
 
 ## 🚀 Getting Started & Running the Project
 
-### Prerequisites
-- Java Development Kit (JDK) 17 or higher.
-- Terminal with ANSI color support (standard in Windows Terminal, PowerShell, CMD, macOS Terminal, and Linux Bash).
+### Method 1: Instant Python CLI Engine (Zero-Setup)
+If you have Python installed, you can launch the complete banking system immediately with zero setup:
+```cmd
+cd "C:\Users\Abhay Maurya\.gemini\antigravity\scratch\bank-app-cli"
+python run.py
+```
 
----
+### Method 2: One-Click Desktop Batch Launcher
+On Windows, double-click the included `run.bat` (or the desktop launcher). It automatically detects if a Java Development Kit (JDK) is present. If found, it compiles and runs the Java engine; otherwise, it seamlessly boots the Python engine!
 
-### Option A: Direct Java Compilation (Zero External Tools)
+### Method 3: Native Java Compilation (`javac` / `java`)
+To compile and run natively using OpenJDK 17+:
+```powershell
+cd "C:\Users\Abhay Maurya\.gemini\antigravity\scratch\bank-app-cli"
 
-Open PowerShell, Command Prompt, or Bash in the `bank-app-cli` directory:
+# Compile all source files
+Get-ChildItem -Recurse -Filter *.java src\main\java | Resolve-Path | ForEach-Object { $_.Path } | Out-File -Encoding ascii sources.txt
+javac -d out @sources.txt
+Remove-Item sources.txt
 
-```bash
-# 1. Compile all Java source files into an 'out' directory
-javac -d out $(find src/main/java -name "*.java")    # Linux / macOS / Git Bash
-# OR on Windows PowerShell:
-Get-ChildItem -Recurse -Filter *.java src\main\java | Resolve-Path | ForEach-Object { $_.Path } | Out-File -Encoding ascii sources.txt; javac -d out @sources.txt; Remove-Item sources.txt
-
-# 2. Run the Console Application
+# Run the application
 java -cp out com.bank.cli.ConsoleBankApp
 ```
 
----
-
-### Option B: Using Maven
-
+### Method 4: Using Apache Maven
 ```bash
-# Compile and launch using Maven exec plugin
 mvn clean compile exec:java
 ```
-
-Or build a standalone executable JAR:
-
-```bash
-mvn clean package
-java -jar target/bank-app-cli-1.0.0.jar
-```
-
----
-
-### Option C: One-Click Run Scripts
-
-* **Windows**: Double-click `run.bat` or run:
-  ```cmd
-  run.bat
-  ```
-* **macOS / Linux**:
-  ```bash
-  chmod +x run.sh
-  ./run.sh
-  ```
 
 ---
 
 ## 🧪 Running the Automated Test Suite
 
-The project includes a standalone test suite that validates all DSA data structures and banking logic without external test libraries:
+The test suite validates every DSA module, business operation, and granular validation rule:
 
-```bash
-# Compile test sources
-javac -d out $(find src/main/java src/test/java -name "*.java")    # Linux / macOS
-# Windows:
-Get-ChildItem -Recurse -Filter *.java src | Resolve-Path | ForEach-Object { $_.Path } | Out-File -Encoding ascii test_sources.txt; javac -d out @test_sources.txt; Remove-Item test_sources.txt
-
-# Execute test suite
+```powershell
+Get-ChildItem -Recurse -Filter *.java src | Resolve-Path | ForEach-Object { $_.Path } | Out-File -Encoding ascii test_sources.txt
+javac -d out @test_sources.txt
+Remove-Item test_sources.txt
 java -cp out com.bank.AppTestSuite
 ```
 
-### Expected Output:
+### Test Suite Execution Output:
 ```
 =======================================================
         RUNNING DSA & BANK SERVICE TEST SUITE
 =======================================================
+
+[0] Granular Validation & Error Handling
+  ✔ [PASS] Valid email passes validation
+  ✔ [PASS] Email missing '@' throws ValidationException
+  ✔ [PASS] Email with spaces throws ValidationException
+  ✔ [PASS] Email missing domain throws ValidationException
+  ✔ [PASS] Email missing username throws ValidationException
+  ✔ [PASS] Email with single character TLD throws ValidationException
+  ✔ [PASS] Negative monetary amount throws ValidationException
+  ✔ [PASS] Invalid phone number throws ValidationException
+  ✔ [PASS] Invalid account number format throws ValidationException
+  ✔ [PASS] Invalid balance range (min > max) throws ValidationException
 
 [1] Trie (Prefix Tree)
   ✔ [PASS] Trie prefix search for 'Al' finds Alice and Alexander
@@ -365,7 +397,7 @@ java -cp out com.bank.AppTestSuite
   ✔ [PASS] Undo reverses the transfer
 
 =======================================================
-TEST RESULTS: 15 Passed | 0 Failed
+TEST RESULTS: 25 Passed | 0 Failed
 =======================================================
 ```
 
@@ -373,19 +405,7 @@ TEST RESULTS: 15 Passed | 0 Failed
 
 ## 💻 CLI Feature Walkthrough & Menu Guide
 
-When you launch `ConsoleBankApp`, the main navigation menu appears:
-
-```
-================================================================================
-   ____            _        ____              _    _             ____  _     ___ 
-  | __ )  __ _ _ __| | __   / ___| _   _  ___ | |_ | |__   ___  / ___|| |   |_ _|
-  |  _ \ / _` | '__| |/ /   \___ \| | | |/ _ \| __|| '_ \ / _ \ | |    | |    | | 
-  | |_) | (_| | |  |   <     ___) | |_| | (_) | |_ | |_) |  __/ | |___ | |___ | | 
-  |____/ \__,_|_|  |_|\_\   |____/ \__, |\___/ \__||_.__/ \___|  \____||_____|___|
-                                   |___/                                          
-                 DSA-Powered Enterprise Banking System (CLI)
-================================================================================
-
+```text
 ========================== MAIN NAVIGATION MENU ==========================
  [ 1] Open New Account                   [ 7] Search Customers (Trie Autocomplete)
  [ 2] View Account Statement             [ 8] Range Search Balances (BST Query)
@@ -397,38 +417,28 @@ When you launch `ConsoleBankApp`, the main navigation menu appears:
 ==========================================================================
 ```
 
-### Quick Test Tour (Recommended Workflow)
-1. **Press `12` (Load Realistic Demo Dataset)**:
-   Instantly populates 6 accounts (`AC-100001` to `AC-100006`), diverse VIP customer tiers, inter-account transfers, and an intentional AML circular transfer ring.
-2. **Press `7` (Trie Customer Search)**:
-   Type `Al` to see instant $O(P + K)$ autocomplete matching "Alice Smith" and "Alexander Wright".
-3. **Press `8` (BST Range Query)**:
-   Enter Min: `1000` and Max: `15000` to retrieve accounts with balances inside that interval in $O(\log N + K)$ time.
-4. **Press `9` (VIP Priority Service Desk)**:
-   Select option `2` (`extractMax`). Notice how Platinum VIP consultation requests are dispatched first, ahead of older Regular requests.
+### Recommended Test Tour:
+1. **Press `12` (Load Realistic Demo Dataset)**: Seeds 6 accounts (`AC-100001` to `AC-100006`), diverse tiers, and a circular AML ring.
+2. **Press `7` (Trie Customer Search)**: Type `Al` for instant sub-millisecond autocomplete of "Alice Smith" and "Alexander Wright".
+3. **Press `8` (BST Range Query)**: Enter Min: `1000` and Max: `15000` to retrieve qualifying accounts in $O(\log N + K)$ time.
+4. **Press `9` (VIP Priority Support Desk)**: Select `2` (`extractMax`) to see the Max-Heap dispatch Platinum VIP consultations first.
 5. **Press `10` (AML Fraud & Forensic Graph)**:
-   - Select option `1` (BFS shortest path) between `AC-100001` and `AC-100006`.
-   - Select option `2` (DFS cycle detection) for account `AC-100001`. The system detects the circular transfer ring:
+   - Select `1` (BFS shortest path) between `AC-100001` and `AC-100006`.
+   - Select `2` (DFS cycle detection) on `AC-100001` to reveal the circular ring:
      `AC-100001 ──► AC-100002 ──► AC-100003 ──► AC-100001`.
-6. **Press `6` (Undo Operation)**:
-   Test reversing transactions safely with the Command Pattern stack.
-7. **Press `11` (System Diagnostics)**:
-   Inspect live LRU Cache metrics: hit counts, miss counts, hit-rate percentage, and cache evictions.
+6. **Press `6` (Undo Operation)**: Test rolling back the most recent transaction via the Command Pattern stack.
+7. **Press `11` (System Diagnostics)**: Inspect live L1 LRU Cache metrics: hit counts, misses, and hit rate percentage.
 
 ---
 
 ## 📐 Key Design Patterns Utilized
 
-1. **Repository Pattern**:
-   Separates data storage mechanisms from domain business logic. Enables swapping in-memory data structures with database persistence (e.g. PostgreSQL, Redis) without altering the `BankService` layer.
-2. **Command Pattern**:
-   Encapsulates financial state mutations as reversible objects pushed onto the `TransactionAuditStack`, enabling reliable operational rollbacks.
-3. **Strategy / Enum with Behavior**:
-   `AccountType` and `CustomerTier` encapsulate business rules (interest rates, minimum balances, priority weights) directly within domain types.
-4. **Sentinel Node Pattern**:
-   `LRUCache` utilizes dummy `head` and `tail` nodes to eliminate null checks and edge-case branches during node insertion and removal.
+1. **Repository Pattern**: Separates persistence operations from core banking business logic.
+2. **Command Pattern**: Encapsulates state mutations as reversible objects stored on the `TransactionAuditStack`.
+3. **Strategy / Enum Behavior**: `AccountType` and `CustomerTier` encapsulate business rules directly within types.
+4. **Sentinel Node Pattern**: `LRUCache` utilizes pseudo `head` and `tail` nodes to eliminate null checks during $O(1)$ pointer manipulations.
 
 ---
 
 ## 📜 License
-This project is open-source educational software distributed under the MIT License. Feel free to use, modify, and expand upon it for your backend masterclass studies, portfolio, and DSA interviews!
+This project is open-source educational software distributed under the MIT License. Feel free to use, modify, and expand upon it for your backend masterclass studies, portfolio, and technical interview preparation!
