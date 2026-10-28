@@ -2,10 +2,12 @@ package com.bank.cli;
 
 import com.bank.domain.*;
 import com.bank.exception.BankException;
+import com.bank.exception.ValidationException;
 import com.bank.service.BankService;
 import com.bank.service.BankServiceImpl;
 import com.bank.util.AnsiColor;
 import com.bank.util.TablePrinter;
+import com.bank.util.Validation;
 
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +17,7 @@ import java.util.Scanner;
  * Interactive Console-based User Interface for the Banking System.
  * Features ASCII banners, formatted tabular reports, resilient input handling,
  * and live DSA diagnostic annotations.
+ * Includes interactive validation loops with clear error guidance.
  */
 public class ConsoleBankApp {
 
@@ -74,14 +77,15 @@ public class ConsoleBankApp {
     }
 
     // =========================================================================
-    // MENU ACTIONS
+    // MENU ACTIONS WITH INTERACTIVE VALIDATION
     // =========================================================================
 
     private void handleOpenAccount() {
         System.out.println(AnsiColor.bold("\n--- OPEN NEW BANK ACCOUNT ---"));
-        String name = prompt("Customer Full Name: ");
-        String email = prompt("Email Address: ");
-        String phone = prompt("Phone Number: ");
+
+        String name = promptValidatedName();
+        String email = promptValidatedEmail();
+        String phone = promptValidatedPhone();
 
         System.out.println("Available Account Types: [1] SAVINGS (Min $100)  [2] CHECKING (Min $0)  [3] FIXED_DEPOSIT (Min $500)");
         String typeChoice = prompt("Select Type (1/2/3, default 1): ");
@@ -90,6 +94,8 @@ public class ConsoleBankApp {
             case "3" -> "FIXED_DEPOSIT";
             default -> "SAVINGS";
         };
+
+        AccountType parsedType = Validation.validateAndParseAccountType(accountType);
 
         System.out.println("Customer Tiers: [1] REGULAR  [2] SILVER  [3] GOLD  [4] PLATINUM");
         String tierChoice = prompt("Select Tier (1/2/3/4, default 1): ");
@@ -100,7 +106,9 @@ public class ConsoleBankApp {
             default -> CustomerTier.REGULAR;
         };
 
-        double initialDeposit = promptDouble("Initial Deposit Amount ($): ");
+        double minBalance = parsedType.getMinimumBalance();
+        double initialDeposit = promptNonNegativeDouble(String.format("Initial Deposit Amount (Min $%.2f for %s): $",
+                minBalance, parsedType.getDisplayName()), minBalance);
 
         String accountNumber = bankService.openAccount(name, email, phone, accountType, initialDeposit, tier);
 
@@ -111,7 +119,7 @@ public class ConsoleBankApp {
 
     private void handleViewAccountStatement() {
         System.out.println(AnsiColor.bold("\n--- ACCOUNT STATEMENT & AUDIT ---"));
-        String accNum = prompt("Enter Account Number: ");
+        String accNum = promptValidatedAccountNumber("Enter Account Number: ");
 
         Account account = bankService.getAccount(accNum);
 
@@ -153,8 +161,8 @@ public class ConsoleBankApp {
 
     private void handleDeposit() {
         System.out.println(AnsiColor.bold("\n--- DEPOSIT FUNDS ---"));
-        String accNum = prompt("Account Number: ");
-        double amount = promptDouble("Deposit Amount ($): ");
+        String accNum = promptValidatedAccountNumber("Account Number: ");
+        double amount = promptPositiveDouble("Deposit Amount ($): ");
         String note = prompt("Note / Reference (optional): ");
 
         Transaction tx = bankService.deposit(accNum, amount, note);
@@ -165,8 +173,8 @@ public class ConsoleBankApp {
 
     private void handleWithdraw() {
         System.out.println(AnsiColor.bold("\n--- WITHDRAW FUNDS ---"));
-        String accNum = prompt("Account Number: ");
-        double amount = promptDouble("Withdrawal Amount ($): ");
+        String accNum = promptValidatedAccountNumber("Account Number: ");
+        double amount = promptPositiveDouble("Withdrawal Amount ($): ");
         String note = prompt("Note / Reference (optional): ");
 
         Transaction tx = bankService.withdraw(accNum, amount, note);
@@ -177,9 +185,15 @@ public class ConsoleBankApp {
 
     private void handleTransfer() {
         System.out.println(AnsiColor.bold("\n--- TRANSFER FUNDS ---"));
-        String fromAcc = prompt("Source Account (From): ");
-        String toAcc = prompt("Destination Account (To): ");
-        double amount = promptDouble("Transfer Amount ($): ");
+        String fromAcc = promptValidatedAccountNumber("Source Account (From): ");
+        String toAcc = promptValidatedAccountNumber("Destination Account (To): ");
+
+        while (fromAcc.equalsIgnoreCase(toAcc)) {
+            System.out.println(AnsiColor.red("Source and destination accounts cannot be identical. Please enter a different destination."));
+            toAcc = promptValidatedAccountNumber("Destination Account (To): ");
+        }
+
+        double amount = promptPositiveDouble("Transfer Amount ($): ");
         String note = prompt("Transfer Note: ");
 
         List<Transaction> txs = bankService.transfer(fromAcc, toAcc, amount, note);
@@ -223,8 +237,14 @@ public class ConsoleBankApp {
     private void handleBstBalanceRangeSearch() {
         System.out.println(AnsiColor.bold("\n--- BINARY SEARCH TREE RANGE QUERY ---"));
         System.out.println("Query accounts by balance boundaries (e.g. Min: 1000, Max: 10000):");
-        double min = promptDouble("Minimum Balance ($): ");
-        double max = promptDouble("Maximum Balance ($): ");
+
+        double min = promptNonNegativeDouble("Minimum Balance ($): ", 0.0);
+        double max;
+        while (true) {
+            max = promptNonNegativeDouble("Maximum Balance ($): ", 0.0);
+            if (max >= min) break;
+            System.out.println(AnsiColor.red(String.format("Maximum balance ($%.2f) cannot be less than minimum balance ($%.2f).", max, min)));
+        }
 
         long startTime = System.nanoTime();
         List<Account> matches = bankService.findAccountsByBalanceRange(min, max);
@@ -303,8 +323,8 @@ public class ConsoleBankApp {
 
         switch (subChoice) {
             case "1" -> {
-                String from = prompt("Source Account: ");
-                String to = prompt("Target Account: ");
+                String from = promptValidatedAccountNumber("Source Account: ");
+                String to = promptValidatedAccountNumber("Target Account: ");
                 List<String> path = bankService.traceMoneyTrail(from, to);
 
                 if (path.isEmpty()) {
@@ -317,7 +337,7 @@ public class ConsoleBankApp {
                 }
             }
             case "2" -> {
-                String acc = prompt("Account to Audit for Circular Flows: ");
+                String acc = promptValidatedAccountNumber("Account to Audit for Circular Flows: ");
                 List<List<String>> cycles = bankService.detectCircularFlows(acc);
 
                 if (cycles.isEmpty()) {
@@ -366,39 +386,86 @@ public class ConsoleBankApp {
     }
 
     // =========================================================================
-    // UI HELPERS
+    // VALIDATING UI PROMPTS (INTERACTIVE LOOPS)
     // =========================================================================
 
-    private void printBanner() {
-        System.out.println(AnsiColor.brightCyan("""
-================================================================================
-   ____            _        ____              _    _             ____  _     ___ 
-  | __ )  __ _ _ __| | __   / ___| _   _  ___ | |_ | |__   ___  / ___|| |   |_ _|
-  |  _ \\ / _` | '__| |/ /   \\___ \\| | | |/ _ \\| __|| '_ \\ / _ \\ | |    | |    | | 
-  | |_) | (_| | |  |   <     ___) | |_| | (_) | |_ | |_) |  __/ | |___ | |___ | | 
-  |____/ \\__,_|_|  |_|\\_\\   |____/ \\__, |\\___/ \\__||_.__/ \\___|  \\____||_____|___|
-                                   |___/                                          
-                 DSA-Powered Enterprise Banking System (CLI)
-================================================================================
-"""));
+    private String promptValidatedName() {
+        while (true) {
+            String name = prompt("Customer Full Name: ");
+            try {
+                Validation.validateName(name);
+                return name.trim();
+            } catch (ValidationException e) {
+                System.out.println(AnsiColor.red("  ✖ [NAME VALIDATION ERROR] " + e.getMessage()));
+            }
+        }
     }
 
-    private void printMainMenu() {
-        System.out.println(AnsiColor.bold("\n========================== MAIN NAVIGATION MENU =========================="));
-        System.out.println(" " + AnsiColor.cyan("[ 1]") + " Open New Account                   " +
-                           AnsiColor.cyan("[ 7]") + " Search Customers (Trie Autocomplete)");
-        System.out.println(" " + AnsiColor.cyan("[ 2]") + " View Account Statement             " +
-                           AnsiColor.cyan("[ 8]") + " Range Search Balances (BST Query)");
-        System.out.println(" " + AnsiColor.cyan("[ 3]") + " Deposit Funds                      " +
-                           AnsiColor.cyan("[ 9]") + " VIP Priority Service Desk (Max-Heap)");
-        System.out.println(" " + AnsiColor.cyan("[ 4]") + " Withdraw Funds                     " +
-                           AnsiColor.cyan("[10]") + " AML Fraud & Money Trail (Graph BFS/DFS)");
-        System.out.println(" " + AnsiColor.cyan("[ 5]") + " Transfer Funds                     " +
-                           AnsiColor.cyan("[11]") + " Diagnostics & LRU Cache Telemetry");
-        System.out.println(" " + AnsiColor.cyan("[ 6]") + " Undo Last Operation (Stack)        " +
-                           AnsiColor.cyan("[12]") + " 1-Click Load Realistic Demo Dataset");
-        System.out.println(" " + AnsiColor.red("[ 0]") + " Exit System");
-        System.out.println(AnsiColor.bold("=========================================================================="));
+    private String promptValidatedEmail() {
+        while (true) {
+            String email = prompt("Email Address: ");
+            try {
+                Validation.validateEmail(email);
+                return email.trim();
+            } catch (ValidationException e) {
+                System.out.println(AnsiColor.red("  ✖ [EMAIL VALIDATION ERROR] " + e.getMessage()));
+            }
+        }
+    }
+
+    private String promptValidatedPhone() {
+        while (true) {
+            String phone = prompt("Phone Number: ");
+            try {
+                Validation.validatePhone(phone);
+                return phone.trim();
+            } catch (ValidationException e) {
+                System.out.println(AnsiColor.red("  ✖ [PHONE VALIDATION ERROR] " + e.getMessage()));
+            }
+        }
+    }
+
+    private String promptValidatedAccountNumber(String message) {
+        while (true) {
+            String acc = prompt(message);
+            try {
+                Validation.validateAccountNumber(acc);
+                return acc.trim().toUpperCase();
+            } catch (ValidationException e) {
+                System.out.println(AnsiColor.red("  ✖ [ACCOUNT NUMBER ERROR] " + e.getMessage()));
+            }
+        }
+    }
+
+    private double promptPositiveAmount(String message) {
+        while (true) {
+            double amt = promptDouble(message);
+            try {
+                Validation.validatePositiveAmount(amt, "Amount");
+                return amt;
+            } catch (ValidationException e) {
+                System.out.println(AnsiColor.red("  ✖ [AMOUNT ERROR] " + e.getMessage()));
+            }
+        }
+    }
+
+    private double promptPositiveDouble(String message) {
+        return promptPositiveAmount(message);
+    }
+
+    private double promptNonNegativeDouble(String message, double minimumRequired) {
+        while (true) {
+            double val = promptDouble(message);
+            if (val < 0.0) {
+                System.out.println(AnsiColor.red("  ✖ Amount cannot be negative. Please enter a valid number."));
+                continue;
+            }
+            if (val < minimumRequired) {
+                System.out.println(AnsiColor.red(String.format("  ✖ Amount ($%.2f) is below the minimum required of $%.2f.", val, minimumRequired)));
+                continue;
+            }
+            return val;
+        }
     }
 
     private String prompt(String message) {
@@ -416,7 +483,7 @@ public class ConsoleBankApp {
             try {
                 return Double.parseDouble(line);
             } catch (NumberFormatException e) {
-                System.out.println(AnsiColor.red("Please enter a valid numeric amount (e.g., 250.50)."));
+                System.out.println(AnsiColor.red("  ✖ Please enter a valid numeric amount (e.g., 250.50)."));
             }
         }
     }

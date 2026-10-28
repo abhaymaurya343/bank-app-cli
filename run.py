@@ -3,8 +3,9 @@
 ================================================================================
 Enterprise CLI Banking System (DSA-Powered) - Python Execution Engine
 ================================================================================
-A native Python implementation mirroring the Core Java architecture, allowing
-instant execution in any Windows CLI without requiring JDK compilation.
+A native Python implementation mirroring the Core Java architecture with robust
+enterprise-grade validation and error handling for emails, phone numbers,
+names, monetary amounts, and account lookups.
 
 Features 6 custom Data Structures & Algorithms:
 1. Trie (Prefix Tree) for instant customer name autocomplete
@@ -17,6 +18,7 @@ Features 6 custom Data Structures & Algorithms:
 """
 
 import sys
+import re
 import uuid
 import datetime
 from collections import deque
@@ -38,6 +40,108 @@ class Color:
     @classmethod
     def wrap(cls, color, text):
         return f"{color}{text}{cls.RESET}"
+
+# ==============================================================================
+# ENTERPRISE VALIDATION UTILITIES
+# ==============================================================================
+
+class Validation:
+    EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9_+&*-]+(?:\.[a-zA-Z0-9_+&*-]+)*@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,7}$')
+    PHONE_REGEX = re.compile(r'^\+?[0-9\s()\-.]+?$')
+    ACCOUNT_REGEX = re.compile(r'^AC-[0-9]{4,8}$', re.IGNORECASE)
+
+    @staticmethod
+    def validate_name(name):
+        if not name or not name.strip():
+            raise ValueError("Customer name cannot be empty or blank.")
+        clean = name.strip()
+        if len(clean) < 2:
+            raise ValueError("Customer name is too short (minimum 2 characters required).")
+        if len(clean) > 100:
+            raise ValueError("Customer name exceeds maximum limit of 100 characters.")
+        if not re.match(r"^[a-zA-Z\s.'-]+$", clean):
+            raise ValueError("Customer name contains invalid characters. Only letters, spaces, hyphens, and apostrophes are allowed.")
+        return clean
+
+    @staticmethod
+    def validate_email(email):
+        if not email or not email.strip():
+            raise ValueError("Email address cannot be empty or blank.")
+        clean = email.strip()
+
+        if " " in clean:
+            raise ValueError("Invalid email: email address cannot contain spaces.")
+
+        at_count = clean.count("@")
+        if at_count == 0:
+            raise ValueError("Invalid email format: missing '@' symbol (e.g. user@domain.com).")
+        if at_count > 1:
+            raise ValueError("Invalid email format: contains multiple '@' symbols.")
+
+        local_part, domain_part = clean.split("@", 1)
+
+        if not local_part:
+            raise ValueError("Invalid email format: missing username/local part before '@'.")
+        if not domain_part:
+            raise ValueError("Invalid email format: missing domain name after '@' (e.g. domain.com).")
+
+        if "." not in domain_part:
+            raise ValueError("Invalid email domain: missing dot extension (e.g. .com, .org).")
+
+        tld = domain_part.rsplit(".", 1)[1]
+        if len(tld) < 2:
+            raise ValueError(f"Invalid email domain: TLD extension '.{tld}' is too short (minimum 2 characters).")
+
+        if not Validation.EMAIL_REGEX.match(clean):
+            raise ValueError(f"Invalid email syntax: '{clean}'. Must be a valid address such as user@example.com.")
+        return clean
+
+    @staticmethod
+    def validate_phone(phone):
+        if not phone or not phone.strip():
+            raise ValueError("Phone number cannot be empty.")
+        clean = phone.strip()
+        digits = [c for c in clean if c.isdigit()]
+        if len(digits) < 7:
+            raise ValueError(f"Phone number contains too few digits ({len(digits)} found; minimum 7 required).")
+        if len(digits) > 15:
+            raise ValueError(f"Phone number exceeds maximum length of 15 digits (ITU-T E.164 standard).")
+        if not Validation.PHONE_REGEX.match(clean):
+            raise ValueError("Phone number contains invalid characters (allowed: +, digits, spaces, hyphens).")
+        return clean
+
+    @staticmethod
+    def validate_account_number(acc_num):
+        if not acc_num or not acc_num.strip():
+            raise ValueError("Account number cannot be empty or blank.")
+        clean = acc_num.strip().upper()
+        if not Validation.ACCOUNT_REGEX.match(clean):
+            raise ValueError(f"Invalid account number format: '{acc_num}'. Format must be AC-XXXXXX (e.g. AC-100001).")
+        return clean
+
+    @staticmethod
+    def validate_positive_amount(amount, field_name="Amount"):
+        try:
+            val = float(amount)
+        except (ValueError, TypeError):
+            raise ValueError(f"{field_name} must be a valid numeric number.")
+        import math
+        if math.isnan(val) or math.isinf(val):
+            raise ValueError(f"{field_name} must be a finite number.")
+        if val <= 0.0:
+            raise ValueError(f"{field_name} must be strictly positive (greater than $0.00). Received: ${val:.2f}")
+        if val > 100_000_000.0:
+            raise ValueError(f"{field_name} exceeds the maximum single transaction limit of $100,000,000.00.")
+        return val
+
+    @staticmethod
+    def validate_balance_range(min_val, max_val):
+        Validation.validate_positive_amount(min_val + 1, "Minimum balance")
+        Validation.validate_positive_amount(max_val + 1, "Maximum balance")
+        if min_val < 0.0:
+            raise ValueError("Minimum balance boundary cannot be negative.")
+        if max_val < min_val:
+            raise ValueError(f"Invalid balance interval: minimum boundary (${min_val:.2f}) cannot exceed maximum boundary (${max_val:.2f}).")
 
 # --- Table Printer ---
 class TablePrinter:
@@ -62,7 +166,6 @@ class TablePrinter:
         return self
 
     def _strip_ansi(self, s):
-        import re
         return re.sub(r'\033\[[;0-9]*m', '', str(s))
 
     def render(self):
@@ -89,7 +192,6 @@ class TablePrinter:
             lines.append("|" + " " * pad_left + Color.wrap(Color.BOLD, self.title) + " " * pad_right + "|")
 
         lines.append(sep)
-        # Header
         h_cells = []
         for i, h in enumerate(self.headers):
             pad = col_widths[i] - len(self._strip_ansi(h)) - 2
@@ -240,7 +342,7 @@ class LRUCache:
                 f"Hits={self.hits} | Misses={self.misses} | "
                 f"Hit Rate={self.get_hit_rate():.1f}% | Evictions={self.evictions}")
 
-# 3. BINARY SEARCH TREE (with duplicate handling and branch pruning)
+# 3. BINARY SEARCH TREE (Range Search)
 class BSTNode:
     def __init__(self, key, value):
         self.key = key
@@ -495,10 +597,9 @@ class ServiceRequest:
         self.timestamp = datetime.datetime.now()
 
     def __lt__(self, other):
-        # Comparison for Max-Heap
         if self.tier[0] != other.tier[0]:
             return self.tier[0] < other.tier[0]
-        return self.timestamp > other.timestamp  # Earlier timestamp has higher priority
+        return self.timestamp > other.timestamp
 
 # ==============================================================================
 # BANK SERVICE
@@ -510,7 +611,7 @@ class BankService:
         self.customers = {}
         self.transactions = []
         self.tx_by_acc = {}
-        
+
         # DSA Indexes
         self.name_trie = Trie()
         self.account_cache = LRUCache(50)
@@ -523,6 +624,14 @@ class BankService:
         self.cust_seq = 1000
 
     def open_account(self, name, email, phone, acc_type="SAVINGS", initial_deposit=0.0, tier=CustomerTier.REGULAR):
+        name = Validation.validate_name(name)
+        email = Validation.validate_email(email)
+        phone = Validation.validate_phone(phone)
+
+        min_bal = 100.0 if acc_type == "SAVINGS" else 500.0 if acc_type == "FIXED_DEPOSIT" else 0.0
+        if initial_deposit < min_bal:
+            raise ValueError(f"Initial deposit (${initial_deposit:.2f}) is below the required minimum of ${min_bal:.2f} for {acc_type}.")
+
         cust = next((c for c in self.customers.values() if c.email.lower() == email.lower()), None)
         if not cust:
             self.cust_seq += 1
@@ -544,6 +653,7 @@ class BankService:
         return acc_num
 
     def get_account(self, acc_num):
+        acc_num = Validation.validate_account_number(acc_num)
         cached = self.account_cache.get(acc_num)
         if cached:
             return cached
@@ -554,20 +664,24 @@ class BankService:
         return None
 
     def deposit(self, acc_num, amount, note="Deposit"):
+        acc_num = Validation.validate_account_number(acc_num)
+        amount = Validation.validate_positive_amount(amount, "Deposit amount")
         acc = self.get_account(acc_num)
         if not acc:
             raise ValueError(f"Account not found: {acc_num}")
+        if not acc.active:
+            raise ValueError(f"Account {acc_num} is frozen or closed.")
+
         old_bal = acc.balance
         self.balance_bst.remove(old_bal, acc)
         acc.balance += amount
         self.balance_bst.insert(acc.balance, acc)
         self.account_cache.put(acc_num, acc)
 
-        tx = Transaction(acc_num, None, amount, "DEPOSIT", note, acc.balance)
+        tx = Transaction(acc_num, None, amount, "DEPOSIT", note or "Deposit", acc.balance)
         self.transactions.append(tx)
         self.tx_by_acc.setdefault(acc_num, []).append(tx)
 
-        # Undo Action
         def undo_action():
             a = self.get_account(acc_num)
             self.balance_bst.remove(a.balance, a)
@@ -582,12 +696,17 @@ class BankService:
         return tx
 
     def withdraw(self, acc_num, amount, note="Withdrawal"):
+        acc_num = Validation.validate_account_number(acc_num)
+        amount = Validation.validate_positive_amount(amount, "Withdrawal amount")
         acc = self.get_account(acc_num)
         if not acc:
             raise ValueError(f"Account not found: {acc_num}")
+        if not acc.active:
+            raise ValueError(f"Account {acc_num} is frozen or closed.")
+
         min_bal = 100.0 if acc.acc_type == "SAVINGS" else 0.0
         if acc.balance - amount < min_bal:
-            raise ValueError(f"Insufficient funds: Balance is ${acc.balance:.2f}; minimum required is ${min_bal:.2f}")
+            raise ValueError(f"Insufficient funds: Balance is ${acc.balance:.2f}; withdrawing ${amount:.2f} violates minimum required balance (${min_bal:.2f}).")
 
         old_bal = acc.balance
         self.balance_bst.remove(old_bal, acc)
@@ -595,7 +714,7 @@ class BankService:
         self.balance_bst.insert(acc.balance, acc)
         self.account_cache.put(acc_num, acc)
 
-        tx = Transaction(acc_num, None, amount, "WITHDRAWAL", note, acc.balance)
+        tx = Transaction(acc_num, None, amount, "WITHDRAWAL", note or "Withdrawal", acc.balance)
         self.transactions.append(tx)
         self.tx_by_acc.setdefault(acc_num, []).append(tx)
 
@@ -613,15 +732,24 @@ class BankService:
         return tx
 
     def transfer(self, from_acc, to_acc, amount, note="Direct Transfer"):
-        if from_acc == to_acc:
-            raise ValueError("Source and destination accounts cannot be identical")
+        from_acc = Validation.validate_account_number(from_acc)
+        to_acc = Validation.validate_account_number(to_acc)
+        if from_acc.upper() == to_acc.upper():
+            raise ValueError("Source and destination accounts cannot be identical.")
+
+        amount = Validation.validate_positive_amount(amount, "Transfer amount")
         src = self.get_account(from_acc)
         dst = self.get_account(to_acc)
-        if not src or not dst:
-            raise ValueError("One or both accounts not found")
+        if not src:
+            raise ValueError(f"Source account {from_acc} does not exist.")
+        if not dst:
+            raise ValueError(f"Destination account {to_acc} does not exist.")
+        if not src.active or not dst.active:
+            raise ValueError("One or both accounts are inactive/frozen.")
+
         min_bal = 100.0 if src.acc_type == "SAVINGS" else 0.0
         if src.balance - amount < min_bal:
-            raise ValueError(f"Insufficient funds in source account {from_acc}")
+            raise ValueError(f"Insufficient funds in source account {from_acc}: Current balance is ${src.balance:.2f}; minimum required is ${min_bal:.2f}.")
 
         self.balance_bst.remove(src.balance, src)
         self.balance_bst.remove(dst.balance, dst)
@@ -632,8 +760,9 @@ class BankService:
         self.account_cache.put(from_acc, src)
         self.account_cache.put(to_acc, dst)
 
-        tx_out = Transaction(from_acc, to_acc, amount, "TRANSFER_OUT", f"Transfer to {to_acc}: {note}", src.balance)
-        tx_in = Transaction(to_acc, from_acc, amount, "TRANSFER_IN", f"Transfer from {from_acc}: {note}", dst.balance)
+        transfer_note = note if note and note.strip() else "Direct Fund Transfer"
+        tx_out = Transaction(from_acc, to_acc, amount, "TRANSFER_OUT", f"Transfer to {to_acc}: {transfer_note}", src.balance)
+        tx_in = Transaction(to_acc, from_acc, amount, "TRANSFER_IN", f"Transfer from {from_acc}: {transfer_note}", dst.balance)
         self.transactions.extend([tx_out, tx_in])
         self.tx_by_acc.setdefault(from_acc, []).append(tx_out)
         self.tx_by_acc.setdefault(to_acc, []).append(tx_in)
@@ -661,7 +790,7 @@ class BankService:
 
     def undo(self):
         if not self.undo_stack:
-            return False, "No reversible operations on the stack"
+            return False, "No reversible operations found on the stack."
         desc, action = self.undo_stack.pop()
         action()
         return True, desc
@@ -710,7 +839,7 @@ class BankService:
         self.priority_desk.insert(ServiceRequest(c4.cust_id, c4.name, c4.tier, "High-value wire transfer pre-approval"))
 
 # ==============================================================================
-# CLI APPLICATION
+# CLI APPLICATION WITH INTERACTIVE ERROR LOOPS
 # ==============================================================================
 
 class ConsoleBankApp:
@@ -769,30 +898,91 @@ class ConsoleBankApp:
         print(f" {Color.wrap(Color.RED, '[ 0]')} Exit System")
         print(Color.wrap(Color.BOLD, "=========================================================================="))
 
+    # --- Validating Prompt Helpers with Retry Loops ---
+
+    def prompt_validated_name(self):
+        while True:
+            val = input("Customer Full Name: ").strip()
+            try:
+                return Validation.validate_name(val)
+            except ValueError as e:
+                print(Color.wrap(Color.RED, f"  ✖ [NAME ERROR] {e}"))
+
+    def prompt_validated_email(self):
+        while True:
+            val = input("Email Address: ").strip()
+            try:
+                return Validation.validate_email(val)
+            except ValueError as e:
+                print(Color.wrap(Color.RED, f"  ✖ [EMAIL ERROR] {e}"))
+
+    def prompt_validated_phone(self):
+        while True:
+            val = input("Phone Number: ").strip()
+            try:
+                return Validation.validate_phone(val)
+            except ValueError as e:
+                print(Color.wrap(Color.RED, f"  ✖ [PHONE ERROR] {e}"))
+
+    def prompt_validated_account_number(self, prompt_text="Account Number: "):
+        while True:
+            val = input(prompt_text).strip()
+            try:
+                return Validation.validate_account_number(val)
+            except ValueError as e:
+                print(Color.wrap(Color.RED, f"  ✖ [ACCOUNT ERROR] {e}"))
+
+    def prompt_positive_amount(self, prompt_text="Amount ($): "):
+        while True:
+            raw = input(prompt_text).strip()
+            try:
+                return Validation.validate_positive_amount(raw, "Amount")
+            except ValueError as e:
+                print(Color.wrap(Color.RED, f"  ✖ [AMOUNT ERROR] {e}"))
+
     def handle_open_account(self):
         print(Color.wrap(Color.BOLD, "\n--- OPEN NEW BANK ACCOUNT ---"))
-        name = input("Customer Full Name: ").strip()
-        email = input("Email Address: ").strip()
-        phone = input("Phone Number: ").strip()
-        print("Account Types: [1] SAVINGS  [2] CHECKING  [3] FIXED_DEPOSIT")
+        name = self.prompt_validated_name()
+        email = self.prompt_validated_email()
+        phone = self.prompt_validated_phone()
+
+        print("Account Types: [1] SAVINGS (Min $100)  [2] CHECKING (Min $0)  [3] FIXED_DEPOSIT (Min $500)")
         tc = input("Select Type (1/2/3, default 1): ").strip()
         acc_type = {"2": "CHECKING", "3": "FIXED_DEPOSIT"}.get(tc, "SAVINGS")
+
         print("Customer Tiers: [1] REGULAR  [2] SILVER  [3] GOLD  [4] PLATINUM")
         trc = input("Select Tier (1/2/3/4, default 1): ").strip()
         tier = {"2": CustomerTier.SILVER, "3": CustomerTier.GOLD, "4": CustomerTier.PLATINUM}.get(trc, CustomerTier.REGULAR)
-        init_dep = float(input("Initial Deposit Amount ($): ") or 0.0)
 
-        acc_num = self.service.open_account(name, email, phone, acc_type, init_dep, tier)
+        min_bal = 100.0 if acc_type == "SAVINGS" else 500.0 if acc_type == "FIXED_DEPOSIT" else 0.0
+        while True:
+            raw_dep = input(f"Initial Deposit Amount (Min ${min_bal:.2f} for {acc_type}): $").strip()
+            if not raw_dep:
+                raw_dep = "0"
+            try:
+                dep_val = float(raw_dep)
+                if dep_val < 0:
+                    print(Color.wrap(Color.RED, "  ✖ Deposit cannot be negative."))
+                    continue
+                if dep_val < min_bal:
+                    print(Color.wrap(Color.RED, f"  ✖ Deposit is below the minimum required of ${min_bal:.2f}."))
+                    continue
+                initial_deposit = dep_val
+                break
+            except ValueError:
+                print(Color.wrap(Color.RED, "  ✖ Please enter a valid numerical amount."))
+
+        acc_num = self.service.open_account(name, email, phone, acc_type, initial_deposit, tier)
         print(Color.wrap(Color.GREEN, f"\n✔ Account successfully created!"))
         print(f"  Account Number: {Color.wrap(Color.BRIGHT_CYAN, acc_num)}")
-        print(Color.wrap(Color.DIM, "  [DSA: Indexed in Primary Map, LRU Cache, Balance BST, and Trie]"))
+        print(Color.wrap(Color.DIM, "  [DSA: Indexed in Primary Map, LRU Cache, Balance BST, and Customer Name Trie]"))
 
     def handle_view_statement(self):
         print(Color.wrap(Color.BOLD, "\n--- ACCOUNT STATEMENT & AUDIT ---"))
-        acc_num = input("Enter Account Number: ").strip()
+        acc_num = self.prompt_validated_account_number("Enter Account Number: ")
         acc = self.service.get_account(acc_num)
         if not acc:
-            print(Color.wrap(Color.RED, f"Account {acc_num} not found."))
+            print(Color.wrap(Color.RED, f"Account {acc_num} not found in system."))
             return
 
         table = TablePrinter("Property", "Value").set_title(f"Account Overview - {acc.acc_num}")
@@ -813,8 +1003,8 @@ class ConsoleBankApp:
 
     def handle_deposit(self):
         print(Color.wrap(Color.BOLD, "\n--- DEPOSIT FUNDS ---"))
-        acc = input("Account Number: ").strip()
-        amt = float(input("Deposit Amount ($): "))
+        acc = self.prompt_validated_account_number("Account Number: ")
+        amt = self.prompt_positive_amount("Deposit Amount ($): ")
         note = input("Note (optional): ").strip()
         tx = self.service.deposit(acc, amt, note)
         print(Color.wrap(Color.GREEN, f"✔ Deposited ${amt:.2f} into {acc}. New Balance: ${tx.balance_after:.2f}"))
@@ -822,27 +1012,33 @@ class ConsoleBankApp:
 
     def handle_withdraw(self):
         print(Color.wrap(Color.BOLD, "\n--- WITHDRAW FUNDS ---"))
-        acc = input("Account Number: ").strip()
-        amt = float(input("Withdrawal Amount ($): "))
+        acc = self.prompt_validated_account_number("Account Number: ")
+        amt = self.prompt_positive_amount("Withdrawal Amount ($): ")
         note = input("Note (optional): ").strip()
         tx = self.service.withdraw(acc, amt, note)
         print(Color.wrap(Color.GREEN, f"✔ Withdrew ${amt:.2f} from {acc}. New Balance: ${tx.balance_after:.2f}"))
 
     def handle_transfer(self):
         print(Color.wrap(Color.BOLD, "\n--- TRANSFER FUNDS ---"))
-        src = input("Source Account (From): ").strip()
-        dst = input("Destination Account (To): ").strip()
-        amt = float(input("Transfer Amount ($): "))
+        src = self.prompt_validated_account_number("Source Account (From): ")
+        while True:
+            dst = self.prompt_validated_account_number("Destination Account (To): ")
+            if dst.upper() == src.upper():
+                print(Color.wrap(Color.RED, "  ✖ Source and destination accounts cannot be identical. Please enter a different target."))
+                continue
+            break
+
+        amt = self.prompt_positive_amount("Transfer Amount ($): ")
         note = input("Transfer Note: ").strip()
         self.service.transfer(src, dst, amt, note)
-        print(Color.wrap(Color.GREEN, f"✔ Transferred ${amt:.2f} from {src} to {dst}."))
+        print(Color.wrap(Color.GREEN, f"✔ Successfully transferred ${amt:.2f} from {src} to {dst}."))
         print(Color.wrap(Color.DIM, "  [DSA: Graph Edge recorded in MoneyFlowGraph & pushed to Undo Stack]"))
 
     def handle_undo(self):
         print(Color.wrap(Color.BOLD, "\n--- UNDO LAST FINANCIAL OPERATION (LIFO STACK) ---"))
         success, desc = self.service.undo()
         if success:
-            print(Color.wrap(Color.GREEN, f"✔ Successfully undone: {desc}"))
+            print(Color.wrap(Color.GREEN, f"✔ Successfully rolled back: {desc}"))
             print(Color.wrap(Color.DIM, "  [DSA IN ACTION: Stack.pop() executed Command Pattern reversal in O(1)]"))
         else:
             print(Color.wrap(Color.YELLOW, desc))
@@ -850,6 +1046,9 @@ class ConsoleBankApp:
     def handle_trie_search(self):
         print(Color.wrap(Color.BOLD, "\n--- TRIE PREFIX SEARCH (INSTANT AUTOCOMPLETE) ---"))
         prefix = input("Enter Name Prefix (e.g. 'Al', 'Bo', 'Cat'): ").strip()
+        if not prefix:
+            print(Color.wrap(Color.YELLOW, "Search prefix cannot be blank."))
+            return
         import time
         t0 = time.perf_counter()
         matches = self.service.name_trie.search_prefix(prefix)
@@ -862,8 +1061,15 @@ class ConsoleBankApp:
 
     def handle_bst_range(self):
         print(Color.wrap(Color.BOLD, "\n--- BINARY SEARCH TREE RANGE QUERY ---"))
-        min_val = float(input("Minimum Balance ($): "))
-        max_val = float(input("Maximum Balance ($): "))
+        while True:
+            try:
+                min_val = float(input("Minimum Balance ($): ").strip())
+                max_val = float(input("Maximum Balance ($): ").strip())
+                Validation.validate_balance_range(min_val, max_val)
+                break
+            except ValueError as e:
+                print(Color.wrap(Color.RED, f"  ✖ [RANGE ERROR] {e}"))
+
         import time
         t0 = time.perf_counter()
         matches = self.service.balance_bst.find_range(min_val, max_val)
@@ -882,9 +1088,12 @@ class ConsoleBankApp:
             cid = input("Customer ID (e.g., CUST-1001): ").strip()
             c = self.service.customers.get(cid)
             if not c:
-                print(Color.wrap(Color.RED, f"Customer {cid} not found."))
+                print(Color.wrap(Color.RED, f"  ✖ Customer ID {cid} not found."))
                 return
             q = input("Issue / Query: ").strip()
+            if not q or len(q) < 3:
+                print(Color.wrap(Color.RED, "  ✖ Query details must be at least 3 characters long."))
+                return
             req = ServiceRequest(c.cust_id, c.name, c.tier, q)
             self.service.priority_desk.insert(req)
             print(Color.wrap(Color.GREEN, f"✔ Ticket submitted: {req.req_id} [Tier: {c.tier[1]}]"))
@@ -909,8 +1118,8 @@ class ConsoleBankApp:
         print("1) Trace Shortest Transfer Path (BFS)\n2) Detect Circular Laundering Loops (DFS)")
         sub = input("Select Option (1/2): ").strip()
         if sub == "1":
-            f = input("Source Account: ").strip()
-            t = input("Target Account: ").strip()
+            f = self.prompt_validated_account_number("Source Account: ")
+            t = self.prompt_validated_account_number("Target Account: ")
             path = self.service.money_graph.shortest_path_bfs(f, t)
             if path:
                 print(Color.wrap(Color.GREEN, "\n✔ Shortest Transfer Path Found (BFS):"))
@@ -920,7 +1129,7 @@ class ConsoleBankApp:
             else:
                 print(Color.wrap(Color.YELLOW, f"No transfer connection found between {f} and {t}."))
         elif sub == "2":
-            acc = input("Account to Audit for Circular Flows: ").strip()
+            acc = self.prompt_validated_account_number("Account to Audit for Circular Flows: ")
             cycles = self.service.money_graph.detect_cycles_dfs(acc)
             if cycles:
                 print(Color.wrap(Color.RED, f"\n⚠ WARNING: {len(cycles)} CIRCULAR FLOW CYCLE(S) DETECTED!"))

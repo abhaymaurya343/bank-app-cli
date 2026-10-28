@@ -2,16 +2,18 @@ package com.bank;
 
 import com.bank.domain.*;
 import com.bank.dsa.*;
+import com.bank.exception.ValidationException;
 import com.bank.service.BankService;
 import com.bank.service.BankServiceImpl;
 import com.bank.util.AnsiColor;
+import com.bank.util.Validation;
 
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Standalone Test Suite that executes unit tests for all core DSA modules
- * and banking business logic without requiring external test runners.
+ * Standalone Test Suite that executes unit tests for all core DSA modules,
+ * banking business logic, and granular input validation error handlers.
  */
 public class AppTestSuite {
 
@@ -23,6 +25,7 @@ public class AppTestSuite {
         System.out.println(AnsiColor.brightCyan("        RUNNING DSA & BANK SERVICE TEST SUITE"));
         System.out.println(AnsiColor.bold("=======================================================\n"));
 
+        testEmailAndInputValidations();
         testTrie();
         testLRUCache();
         testBinarySearchTree();
@@ -65,12 +68,76 @@ public class AppTestSuite {
         }
     }
 
+    private static void assertThrows(Class<? extends Throwable> expectedType, Runnable runnable, String msg) {
+        try {
+            runnable.run();
+            throw new AssertionError("Expected " + expectedType.getSimpleName() + " was not thrown for: " + msg);
+        } catch (Throwable t) {
+            if (!expectedType.isInstance(t)) {
+                throw new AssertionError("Wrong exception type thrown. Expected: " + expectedType.getSimpleName() +
+                        ", Got: " + t.getClass().getSimpleName() + " (" + t.getMessage() + ")");
+            }
+        }
+    }
+
+    // =========================================================================
+    // VALIDATION & ERROR HANDLING TESTS
+    // =========================================================================
+
+    private static void testEmailAndInputValidations() {
+        System.out.println(AnsiColor.bold("[0] Granular Validation & Error Handling"));
+
+        test("Valid email passes validation", () -> {
+            Validation.validateEmail("user.name+tag@domain.com");
+            Validation.validateEmail("alice@sub.bank.co.uk");
+        });
+
+        test("Email missing '@' throws ValidationException", () -> {
+            assertThrows(ValidationException.class, () -> Validation.validateEmail("invalidemail.com"), "missing @");
+        });
+
+        test("Email with spaces throws ValidationException", () -> {
+            assertThrows(ValidationException.class, () -> Validation.validateEmail("user name@domain.com"), "spaces");
+        });
+
+        test("Email missing domain throws ValidationException", () -> {
+            assertThrows(ValidationException.class, () -> Validation.validateEmail("username@"), "missing domain");
+        });
+
+        test("Email missing username throws ValidationException", () -> {
+            assertThrows(ValidationException.class, () -> Validation.validateEmail("@domain.com"), "missing username");
+        });
+
+        test("Email with single character TLD throws ValidationException", () -> {
+            assertThrows(ValidationException.class, () -> Validation.validateEmail("user@domain.c"), "TLD too short");
+        });
+
+        test("Negative monetary amount throws ValidationException", () -> {
+            assertThrows(ValidationException.class, () -> Validation.validatePositiveAmount(-50.0, "Deposit"), "negative amount");
+            assertThrows(ValidationException.class, () -> Validation.validatePositiveAmount(0.0, "Deposit"), "zero amount");
+        });
+
+        test("Invalid phone number throws ValidationException", () -> {
+            assertThrows(ValidationException.class, () -> Validation.validatePhone("123"), "too few digits");
+            assertThrows(ValidationException.class, () -> Validation.validatePhone("abc-def-ghij"), "alphabetic characters");
+        });
+
+        test("Invalid account number format throws ValidationException", () -> {
+            assertThrows(ValidationException.class, () -> Validation.validateAccountNumber("123456"), "missing prefix");
+            assertThrows(ValidationException.class, () -> Validation.validateAccountNumber("XYZ-001"), "wrong prefix");
+        });
+
+        test("Invalid balance range (min > max) throws ValidationException", () -> {
+            assertThrows(ValidationException.class, () -> Validation.validateBalanceRange(5000.0, 1000.0), "min > max");
+        });
+    }
+
     // =========================================================================
     // DSA TESTS
     // =========================================================================
 
     private static void testTrie() {
-        System.out.println(AnsiColor.bold("[1] Trie (Prefix Tree)"));
+        System.out.println(AnsiColor.bold("\n[1] Trie (Prefix Tree)"));
         Trie<String> trie = new Trie<>();
         trie.insert("Alice Smith", "ALICE");
         trie.insert("Alexander Hamilton", "ALEX");
@@ -108,7 +175,6 @@ public class AppTestSuite {
         });
 
         test("LRU Cache evicts least recently accessed item when full", () -> {
-            // A and B were read above, C is now least recently accessed
             cache.put("D", 4); // Evicts C
             assertEquals(Optional.empty(), cache.get("C"), "Key C should be evicted");
             assertEquals(Optional.of(4), cache.get("D"), "Key D should exist");
@@ -170,7 +236,6 @@ public class AppTestSuite {
         System.out.println(AnsiColor.bold("\n[5] Money Flow Graph (AML & Shortest Path)"));
         MoneyFlowGraph graph = new MoneyFlowGraph();
 
-        // Path: A -> B -> C -> D
         graph.recordTransfer("A", "B", 100.0, "TX1");
         graph.recordTransfer("B", "C", 100.0, "TX2");
         graph.recordTransfer("C", "D", 100.0, "TX3");
@@ -181,7 +246,6 @@ public class AppTestSuite {
         });
 
         test("Graph DFS detects circular AML ring (C -> A)", () -> {
-            // Close cycle: C -> A
             graph.recordTransfer("C", "A", 50.0, "TX4");
             List<List<String>> cycles = graph.detectCircularFlows("A");
             assertTrue(!cycles.isEmpty(), "Circular cycle must be detected");
@@ -199,7 +263,7 @@ public class AppTestSuite {
         stack.push("Increment", () -> counter[0] -= 5);
 
         test("Undo executes last command", () -> {
-            counter[0] += 5; // State changed to 15
+            counter[0] += 5;
             assertEquals(15, counter[0], "Counter updated to 15");
             Optional<TransactionAuditStack.ReversibleTransaction> op = stack.pop();
             assertTrue(op.isPresent(), "Stack should have operation");

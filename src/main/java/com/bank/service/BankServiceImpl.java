@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 /**
  * Production-ready implementation of BankService orchestrating
  * core banking business logic and DSA indexes.
+ * Enforces rigorous domain-level validation and error checking across all operations.
  */
 public class BankServiceImpl implements BankService {
 
@@ -49,12 +50,13 @@ public class BankServiceImpl implements BankService {
                                           CustomerTier tier) {
         Validation.validateName(name);
         Validation.validateEmail(email);
+        Validation.validatePhone(phone);
         Validation.validateNonNegativeAmount(initialDeposit, "Initial deposit");
         AccountType accountType = Validation.validateAndParseAccountType(accountTypeStr);
 
         if (initialDeposit < accountType.getMinimumBalance()) {
             throw new ValidationException(String.format(
-                    "Initial deposit $%.2f is below the required minimum of $%.2f for %s.",
+                    "Initial deposit $%.2f is below the required minimum balance of $%.2f for %s.",
                     initialDeposit, accountType.getMinimumBalance(), accountType.getDisplayName()
             ));
         }
@@ -62,7 +64,7 @@ public class BankServiceImpl implements BankService {
         // Find or create customer
         Customer customer = customerRepository.findByEmail(email).orElseGet(() -> {
             String custId = "CUST-" + customerSequence.incrementAndGet();
-            Customer newCust = new Customer(custId, name.trim(), email.trim(), phone != null ? phone.trim() : "N/A", tier);
+            Customer newCust = new Customer(custId, name.trim(), email.trim(), phone.trim(), tier);
             customerRepository.save(newCust);
             return newCust;
         });
@@ -81,6 +83,7 @@ public class BankServiceImpl implements BankService {
 
     @Override
     public synchronized Account getAccount(String accountNumber) {
+        Validation.validateAccountNumber(accountNumber);
         return accountRepository.findByNumber(accountNumber)
                 .orElseThrow(() -> new AccountNotFoundException(accountNumber));
     }
@@ -92,6 +95,7 @@ public class BankServiceImpl implements BankService {
 
     @Override
     public synchronized boolean closeAccount(String accountNumber) {
+        Validation.validateAccountNumber(accountNumber);
         Account account = getAccount(accountNumber);
         if (account.getBalance() > 0.0) {
             throw new ValidationException(String.format(
@@ -110,6 +114,7 @@ public class BankServiceImpl implements BankService {
 
     @Override
     public synchronized Transaction deposit(String accountNumber, double amount, String note) {
+        Validation.validateAccountNumber(accountNumber);
         Validation.validatePositiveAmount(amount, "Deposit amount");
         Account account = getAccount(accountNumber);
         ensureActiveAccount(account);
@@ -144,6 +149,7 @@ public class BankServiceImpl implements BankService {
 
     @Override
     public synchronized Transaction withdraw(String accountNumber, double amount, String note) {
+        Validation.validateAccountNumber(accountNumber);
         Validation.validatePositiveAmount(amount, "Withdrawal amount");
         Account account = getAccount(accountNumber);
         ensureActiveAccount(account);
@@ -187,10 +193,10 @@ public class BankServiceImpl implements BankService {
     @Override
     public synchronized List<Transaction> transfer(String fromAccount, String toAccount,
                                                   double amount, String note) {
+        Validation.validateAccountNumber(fromAccount);
+        Validation.validateAccountNumber(toAccount);
         Validation.validatePositiveAmount(amount, "Transfer amount");
-        if (fromAccount == null || toAccount == null) {
-            throw new ValidationException("Source and destination accounts must be specified.");
-        }
+
         if (fromAccount.equalsIgnoreCase(toAccount)) {
             throw new ValidationException("Source and destination accounts cannot be identical.");
         }
@@ -268,6 +274,7 @@ public class BankServiceImpl implements BankService {
 
     @Override
     public synchronized List<Transaction> getAccountStatement(String accountNumber) {
+        Validation.validateAccountNumber(accountNumber);
         getAccount(accountNumber); // Verify existence
         return transactionRepository.findByAccountNumber(accountNumber);
     }
@@ -278,14 +285,15 @@ public class BankServiceImpl implements BankService {
 
     @Override
     public synchronized List<Customer> searchCustomersByPrefix(String prefix) {
-        return customerRepository.searchByNamePrefix(prefix);
+        if (prefix == null || prefix.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        return customerRepository.searchByNamePrefix(prefix.trim());
     }
 
     @Override
     public synchronized List<Account> findAccountsByBalanceRange(double minBalance, double maxBalance) {
-        if (minBalance > maxBalance) {
-            throw new ValidationException("Minimum balance boundary cannot be greater than maximum balance boundary.");
-        }
+        Validation.validateBalanceRange(minBalance, maxBalance);
         return accountRepository.findByBalanceRange(minBalance, maxBalance);
     }
 
@@ -294,15 +302,14 @@ public class BankServiceImpl implements BankService {
         if (query == null || query.trim().isEmpty()) {
             return Collections.emptyList();
         }
-        // First query Trie for customers matching query prefix
-        List<Customer> matchingCustomers = customerRepository.searchByNamePrefix(query);
+        List<Customer> matchingCustomers = customerRepository.searchByNamePrefix(query.trim());
         Set<String> customerIds = matchingCustomers.stream()
                 .map(Customer::getCustomerId)
                 .collect(Collectors.toSet());
 
         return accountRepository.findAll().stream()
                 .filter(a -> customerIds.contains(a.getCustomerId()) ||
-                             a.getCustomerName().toLowerCase().contains(query.toLowerCase()))
+                             a.getCustomerName().toLowerCase().contains(query.trim().toLowerCase()))
                 .sorted(Comparator.comparing(Account::getAccountNumber))
                 .collect(Collectors.toList());
     }
@@ -313,12 +320,13 @@ public class BankServiceImpl implements BankService {
 
     @Override
     public synchronized ServiceRequest submitServiceRequest(String customerId, String queryDetails) {
-        Customer customer = customerRepository.findById(customerId)
-                .orElseThrow(() -> new ValidationException("Customer ID not found: " + customerId));
-
-        if (queryDetails == null || queryDetails.trim().isEmpty()) {
-            throw new ValidationException("Query details cannot be empty.");
+        if (customerId == null || customerId.trim().isEmpty()) {
+            throw new ValidationException("Customer ID cannot be empty or whitespace.");
         }
+        Customer customer = customerRepository.findById(customerId.trim())
+                .orElseThrow(() -> new ValidationException("Customer ID not found in system: " + customerId.trim()));
+
+        Validation.validateText(queryDetails, "Support query details", 3, 500);
 
         ServiceRequest request = new ServiceRequest(
                 customer.getCustomerId(),
@@ -343,7 +351,6 @@ public class BankServiceImpl implements BankService {
 
     @Override
     public synchronized List<ServiceRequest> listPendingServiceRequests() {
-        // Return heap elements in priority order (temporary copy extraction)
         List<ServiceRequest> heapCopy = priorityDeskQueue.toList();
         heapCopy.sort(Comparator.reverseOrder());
         return heapCopy;
@@ -355,11 +362,17 @@ public class BankServiceImpl implements BankService {
 
     @Override
     public synchronized List<String> traceMoneyTrail(String fromAccount, String toAccount) {
+        Validation.validateAccountNumber(fromAccount);
+        Validation.validateAccountNumber(toAccount);
+        getAccount(fromAccount); // Verify existence
+        getAccount(toAccount);   // Verify existence
         return transactionRepository.getMoneyFlowGraph().findShortestTransferPath(fromAccount, toAccount);
     }
 
     @Override
     public synchronized List<List<String>> detectSuspiciousCycles(String accountNumber) {
+        Validation.validateAccountNumber(accountNumber);
+        getAccount(accountNumber); // Verify existence
         return transactionRepository.getMoneyFlowGraph().detectCircularFlows(accountNumber);
     }
 
@@ -394,12 +407,12 @@ public class BankServiceImpl implements BankService {
         customerRepository.save(c6);
 
         // 2. Open Accounts with varied balances for BST Range Queries
-        String acc1 = "AC-100001"; // Alice (Savings, $12,500.00)
-        String acc2 = "AC-100002"; // Alexander (Checking, $4,200.00)
-        String acc3 = "AC-100003"; // Bob (Savings, $850.00)
-        String acc4 = "AC-100004"; // Catherine (Fixed Deposit, $50,000.00)
-        String acc5 = "AC-100005"; // David (Checking, $150.00)
-        String acc6 = "AC-100006"; // Emma (Savings, $3,400.00)
+        String acc1 = "AC-100001";
+        String acc2 = "AC-100002";
+        String acc3 = "AC-100003";
+        String acc4 = "AC-100004";
+        String acc5 = "AC-100005";
+        String acc6 = "AC-100006";
 
         accountRepository.save(new Account(acc1, c1.getCustomerId(), c1.getName(), AccountType.SAVINGS, 12500.00));
         accountRepository.save(new Account(acc2, c2.getCustomerId(), c2.getName(), AccountType.CHECKING, 4200.00));
@@ -409,12 +422,10 @@ public class BankServiceImpl implements BankService {
         accountRepository.save(new Account(acc6, c6.getCustomerId(), c6.getName(), AccountType.SAVINGS, 3400.00));
 
         // 3. Seed Transactions & Transfers to form Graph Paths and an AML Circular Ring:
-        // Chain: AC-100001 -> AC-100002 -> AC-100003 -> AC-100001 (Circular AML ring!)
         transfer(acc1, acc2, 1000.00, "Consulting fee payment");
         transfer(acc2, acc3, 750.00, "Subcontractor payout");
         transfer(acc3, acc1, 500.00, "Refund balance (Cycle back)");
 
-        // Outlying Chain: AC-100002 -> AC-100005 -> AC-100006
         transfer(acc2, acc5, 300.00, "Personal loan repayment");
         transfer(acc5, acc6, 200.00, "Gift transfer");
 
