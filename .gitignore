@@ -32,3 +32,4 @@ test_sources.txt
 Thumbs.db
 Desktop.ini
 .DS_Store
+__pycache__/
